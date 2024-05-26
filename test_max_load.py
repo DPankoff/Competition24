@@ -40,12 +40,12 @@ def remove_stop_words(text):
     words = text.split()
     return ' '.join([word for word in words if word.lower() not in stop_words])
 
-def analyze_similarity(pages):
+def analyze_similarity(content1, content2):
     tfidf_vectorizer = TfidfVectorizer()
-    tfidf_matrix = tfidf_vectorizer.fit_transform([page['content'] for page in pages])
+    tfidf_matrix = tfidf_vectorizer.fit_transform([content1, content2])
     cosine_similarities = cosine_similarity(tfidf_matrix)
-    
-    return cosine_similarities
+    similarity = cosine_similarities[0][1]
+    return similarity
 
 def check_robots_txt(url):
     robots_url = f"{url.scheme}://{url.netloc}/robots.txt"
@@ -99,8 +99,7 @@ def analyze_page(url):
     
     # Check for duplicate content
     pages = [meta_data]
-    similarities = analyze_similarity(pages)
-    meta_data['duplicate_content'] = "No" if similarities[0][0] == 1.0 else "Yes"
+    meta_data['duplicate_content'] = "No"  # Simplified for this example
     
     # Check for errors in code
     meta_data['code_errors'] = "No" if len(soup.find_all('html')) == 1 else "Yes"
@@ -120,37 +119,48 @@ def analyze_page(url):
 
 def compare_pages(urls):
     urls_list = urls.split(',')
+    if len(urls_list) != 2:
+        return "Please enter exactly two URLs separated by a comma."
+    
     results = []
     for url in urls_list:
         url = url.strip()
         result = analyze_page(url)
         if result:
-            results.append([
-                result['url'],
-                result['title'],
-                result['meta_description'],
-                ", ".join(result['h1_tags']),
-                result['robots_txt'],
-                result['duplicate_content'],
-                result['code_errors'],
-                result['internal_links'],
-                result['image_weight'],
-                result['load_time']
-            ])
+            results.append(result)
     
-    return results
+    if len(results) != 2:
+        return "One or both URLs could not be processed."
+    
+    similarity = analyze_similarity(results[0]['content'], results[1]['content']) * 100
+    
+    comparison = [
+        ["Metric", "Site 1", "Site 2"],
+        ["Title", results[0]['title'], results[1]['title']],
+        ["Meta Description", results[0]['meta_description'], results[1]['meta_description']],
+        ["H1 Tags", ", ".join(results[0]['h1_tags']), ", ".join(results[1]['h1_tags'])],
+        ["Robots.txt", results[0]['robots_txt'], results[1]['robots_txt']],
+        ["Duplicate Content", results[0]['duplicate_content'], results[1]['duplicate_content']],
+        ["Code Errors", results[0]['code_errors'], results[1]['code_errors']],
+        ["Internal Links", results[0]['internal_links'], results[1]['internal_links']],
+        ["Image Weight", results[0]['image_weight'], results[1]['image_weight']],
+        ["Load Time", results[0]['load_time'], results[1]['load_time']]
+    ]
+    
+    return comparison, f"Similarity: {similarity:.2f}%"
 
-# Создание интерфейса Gradio
-iface = gr.Interface(
-    fn=compare_pages,
-    inputs=gr.Textbox(lines=2, placeholder="Enter URLs separated by commas", label="URLs"),
-    outputs=gr.Dataframe(headers=["URL", "Title", "Meta Description", "H1 Tags", "Robots.txt", "Duplicate Content", "Code Errors", "Internal Links", "Image Weight", "Load Time"]),
-    title="Page Analysis",
-    description="Введите URL-адреса страниц, разделенные запятыми, для анализа их индексации и ранжирования."
-)
+with gr.Blocks(css=".gr-column {max-width: 200px; margin: auto;}") as iface:
+    with gr.Column():
+        urls_input = gr.Textbox(lines=2, placeholder="Enter exactly two URLs separated by a comma", label="URLs")
+        compare_button = gr.Button("Compare")
+        similarity_output = gr.Textbox(label="Similarity Percentage")
+        comparison_output = gr.Dataframe(headers=["Metric", "Site 1", "Site 2"])
+
+    compare_button.click(fn=compare_pages, inputs=urls_input, outputs=[comparison_output, similarity_output])
 
 # Запуск интерфейса
 iface.launch()
+
 
 # urls = [
 #     'https://www.trustpilot.com/trust/the-cost-of-living/',
